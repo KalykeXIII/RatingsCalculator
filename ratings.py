@@ -8,8 +8,11 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service as ChromeService
 from webdriver_manager.chrome import ChromeDriverManager
 
+options = webdriver.ChromeOptions() 
+options.add_argument("start-maximized")
+options.add_experimental_option('excludeSwitches', ['enable-logging'])
 service = ChromeService(executable_path=ChromeDriverManager().install())
-driver = webdriver.Chrome(service=service)
+driver = webdriver.Chrome(service=service, options=options)
 
 def get_evaluated_events(pdga_number):
     # Contain objects to store all of the retreived details
@@ -43,7 +46,7 @@ def get_evaluated_events(pdga_number):
         if included == 'Yes':
             round_ratings.append((round_rating, date))
 
-    return evaluated_events, round_ratings
+    return evaluated_events, round_ratings[::-1]
 
 def get_all_events(pdga_number):
     # Create objects to store all events
@@ -62,7 +65,9 @@ def get_all_events(pdga_number):
             name = event.text
             link = event.find_element(By.TAG_NAME, 'a').get_attribute('href')
             event_lookup[name] = link
-    return list(event_lookup.keys()), event_lookup
+    # Also get the current PDGA rating
+    rating = driver.find_element(By.CLASS_NAME, 'current-rating').text[16:].split(' ')[0]
+    return list(event_lookup.keys()), event_lookup, int(rating)
 
 
 def get_round_ratings_from_tournament(pdga_number, page):
@@ -97,11 +102,11 @@ def get_round_ratings_from_tournament(pdga_number, page):
                         new_rounds.append((rating.text, date))
     return new_rounds
 
-def calculate_ratings(ratings):
+def calculate_ratings(ratings, current_rating):
     # Create a processed object
     processed_ratings = []
-
-    # Get the current rating
+    counted_rounds = []
+    ratings_sum = 0
 
     # Preprocess the list of ratings by converting the date strings into formal dates
     for rating in ratings:
@@ -111,37 +116,46 @@ def calculate_ratings(ratings):
     
     # Calculate the standard deviation of the rounds
     st_dev = statistics.pstdev(ratings)
-    
-    # Determine whether any rounds should be excluded -> outside 2.5 STDEV or 100 points of current rating
-    for round in processed_ratings:
-        if round[0]:
-            pass
+    average_round = statistics.mean(ratings)
+    today = datetime.today()
+    date_1yr_ago = datetime(today.year-1, today.month, today.day)
 
-    # Order the list by dates desc
+    for round in processed_ratings:
+        # Determine whether any rounds should be excluded -> outside 2.5 STDEV or 100 points of current rating
+        if int(round[0]) > (average_round - 100) and int(round[0]) > (current_rating - 2.5*st_dev):
+            # Also check the round was in the last 12 months
+            if round[1] > date_1yr_ago:
+                counted_rounds.append(round)
+
+
+    # Order the rounds correctly
+    counted_rounds = counted_rounds[::-1]
 
     # Work out the total number of rounds and the number of rounds to double count due to recency
+    recent_rounds = int(len(counted_rounds) * 0.25)
 
     # Calculate and return the resultant average as the new rating and the change from current
-
-    pass
-
+    for i in range(len(counted_rounds)):
+        if i < recent_rounds:
+            ratings_sum += int(counted_rounds[i][0]) * 2
+        else:
+            ratings_sum += int(counted_rounds[i][0])
+    return ratings_sum // (len(counted_rounds) + recent_rounds)
 
 if __name__ == '__main__':
     # Get the PDGA number passed through the command line
     pdga_number = sys.argv[1]
     # # Retrieve a list of all the events this player has competed in (only conerned with the current year as the only reason we want the list is to add new rounds)
-    # all_events, event_lookup = get_all_events(pdga_number)
-    # # Get a list of the currently evaluated events and the currently considered ratings
-    # evaluated_events, round_ratings = get_evaluated_events(pdga_number)
-    # # For any event not already included, retrieve the player ratings for the event
-    # for event in all_events:
-    #     if event not in evaluated_events:
-    #         # Get the link for the event page
-    #         page = event_lookup[event]
-    #         # Then add these ratings to the list of existent ratings
-    #         round_ratings.extend(get_round_ratings_from_tournament(pdga_number, page))
-    round_ratings = [('861', '3-Oct-2022'), ('861', '3-Oct-2022'), ('854', '3-Oct-2022'), ('804', '11-Sep-2022'), ('872', '11-Sep-2022'), ('860', '21-Aug-2022'), ('879', '21-Aug-2022'), ('860', '21-Aug-2022'), ('863', '7-Aug-2022'), ('885', '7-Aug-2022'), ('819', '31-Jul-2022'), ('859', 
-'31-Jul-2022'), ('759', '22-May-2022'), ('792', '22-May-2022'), ('777', '14-Apr-2022'), ('789', '14-Apr-2022'), ('871', '14-Apr-2022'), ('761', '15-Oct-2022'), ('856', '15-Oct-2022'), ('882', '22-Oct-2022'), ('820', '22-Oct-2022'), ('861', '30-Oct-2022'), ('897', '01-Nov-2022'), ('880', '01-Nov-2022')]
+    all_events, event_lookup, current_rating = get_all_events(pdga_number)
+    # Get a list of the currently evaluated events and the currently considered ratings
+    evaluated_events, round_ratings = get_evaluated_events(pdga_number)
+    # For any event not already included, retrieve the player ratings for the event
+    for event in all_events:
+        if event not in evaluated_events:
+            # Get the link for the event page
+            page = event_lookup[event]
+            # Then add these ratings to the list of existent ratings
+            round_ratings.extend(get_round_ratings_from_tournament(pdga_number, page))
     # Then calculate the new rating based on the up to date list of round ratings
-    new_rating = calculate_ratings(round_ratings)
-    print(new_rating)
+    new_rating = calculate_ratings(round_ratings, current_rating)
+    print('Your new rating is estimated to be:', new_rating)
