@@ -10,6 +10,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 
 options = webdriver.ChromeOptions() 
 options.add_argument("start-maximized")
+options.add_argument("--headless")
 options.add_experimental_option('excludeSwitches', ['enable-logging'])
 service = ChromeService(executable_path=ChromeDriverManager().install())
 driver = webdriver.Chrome(service=service, options=options)
@@ -60,11 +61,14 @@ def get_all_events(pdga_number):
         # For each table, retrieve each row
         tournaments = table.find_elements(By.TAG_NAME, 'tr')
         for tournament in tournaments:
-            # Retrieve the tournament name and the link to the tournament page
-            event = tournament.find_element(By.CLASS_NAME, 'tournament')
-            name = event.text
-            link = event.find_element(By.TAG_NAME, 'a').get_attribute('href')
-            event_lookup[name] = link
+            # Check that the tournament or event is a valid ratings event -> anything with an X is not rated
+            tier = tournament.find_element(By.CLASS_NAME, 'tier')
+            if 'X' not in tier.text:
+                # Retrieve the tournament name and the link to the tournament page
+                event = tournament.find_element(By.CLASS_NAME, 'tournament')
+                name = event.text
+                link = event.find_element(By.TAG_NAME, 'a').get_attribute('href')
+                event_lookup[name] = link
     # Also get the current PDGA rating
     rating = driver.find_element(By.CLASS_NAME, 'current-rating').text[16:].split(' ')[0]
     return list(event_lookup.keys()), event_lookup, int(rating)
@@ -118,7 +122,8 @@ def calculate_ratings(ratings, current_rating):
     st_dev = statistics.pstdev(ratings)
     average_round = statistics.mean(ratings)
     today = datetime.today()
-    date_1yr_ago = datetime(today.year-1, today.month, today.day)
+    # Take the date as though it is at the start of next month
+    date_1yr_ago = datetime(today.year - 1, today.month + 1, 1)
 
     for round in processed_ratings:
         # Determine whether any rounds should be excluded -> outside 2.5 STDEV or 100 points of current rating
@@ -126,7 +131,6 @@ def calculate_ratings(ratings, current_rating):
             # Also check the round was in the last 12 months
             if round[1] > date_1yr_ago:
                 counted_rounds.append(round)
-
 
     # Order the rounds correctly
     counted_rounds = counted_rounds[::-1]
@@ -157,5 +161,6 @@ if __name__ == '__main__':
             # Then add these ratings to the list of existent ratings
             round_ratings.extend(get_round_ratings_from_tournament(pdga_number, page))
     # Then calculate the new rating based on the up to date list of round ratings
+    driver.quit()
     new_rating = calculate_ratings(round_ratings, current_rating)
     print('Your new rating is estimated to be:', new_rating)
