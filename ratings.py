@@ -2,7 +2,7 @@ import os
 import statistics
 import sys
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service as ChromeService
@@ -111,8 +111,18 @@ def calculate_ratings(ratings_table, current_rating):
     st_dev = ratings_table['Rating'].std()
     average_round = ratings_table['Rating'].mean()
     today = datetime.today()
-    # Take the date as though it is at the start of next month
-    date_1yr_ago = datetime(today.year - 1, today.month + 1, 1)
+    # Take the date as though it is at the 8th of next month
+    d = datetime(today.year - 1, today.month + 1, 8)
+    # Check if the 8th is a Tuesday (the 2nd in the month)
+    if d.weekday() == 1:
+        date_1yr_ago = d
+    # Deal with it being the Monday before the 2nd Tuesday
+    elif d.weekday() == 0:
+        offset = 1
+        date_1yr_ago = d + timedelta(offset)
+    else:
+        offset = 8 - d.weekday()
+        date_1yr_ago = d + timedelta(offset)
 
     # Preprocess the list of ratings by converting the date strings into formal dates
     for i, row in ratings_table.iterrows():
