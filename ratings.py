@@ -17,6 +17,22 @@ driver = webdriver.Chrome(service=service, options=options)
 
 ratings_columns = ['Tournament', 'Date', 'Rating', 'Included']
 
+def find_update_date(year, month):
+    # Take the date as though it is at the 8th of next month
+    d = datetime(year, month, 8)
+    # Check if the 8th is a Tuesday (the 2nd in the month)
+    if d.weekday() == 1:
+        update_date = d
+    # Deal with it being the Monday before the 2nd Tuesday
+    elif d.weekday() == 0:
+        offset = 1
+        update_date = d + timedelta(offset)
+    else:
+        offset = 8 - d.weekday()
+        update_date = d + timedelta(offset)
+    return update_date
+    
+
 def get_evaluated_events(pdga_number):
     # Contain objects to store all of the retreived details
     evaluated_events = []
@@ -112,17 +128,11 @@ def calculate_ratings(ratings_table, current_rating):
     average_round = ratings_table['Rating'].mean()
     today = datetime.today()
     # Take the date as though it is at the 8th of next month
-    d = datetime(today.year - 1, today.month + 1, 8)
-    # Check if the 8th is a Tuesday (the 2nd in the month)
-    if d.weekday() == 1:
-        date_1yr_ago = d
-    # Deal with it being the Monday before the 2nd Tuesday
-    elif d.weekday() == 0:
-        offset = 1
-        date_1yr_ago = d + timedelta(offset)
-    else:
-        offset = 8 - d.weekday()
-        date_1yr_ago = d + timedelta(offset)
+    update_date_yr_ago = find_update_date(today.year - 1, today.month)
+    current_date_yr_ago = datetime(today.year - 1, today.month, today.day)
+    # Check to see if we are past the update date of this month already
+    if current_date_yr_ago > update_date_yr_ago:
+        update_date_yr_ago = find_update_date(today.year - 1, today.month + 1)
 
     # Preprocess the list of ratings by converting the date strings into formal dates
     for i, row in ratings_table.iterrows():
@@ -130,7 +140,7 @@ def calculate_ratings(ratings_table, current_rating):
         # Determine whether any rounds should be excluded -> outside 2.5 STDEV or 100 points of current rating
         if int(row['Rating']) > (average_round - 100) and int(row['Rating']) > (current_rating - 2.5*st_dev):
             # Also check the round was in the last 12 months
-            if row['Date'] > date_1yr_ago:
+            if row['Date'] > update_date_yr_ago:
                 row['Included'] = 'Yes'
             else:
                 row['Included'] = 'No'
