@@ -133,8 +133,8 @@ def calculate_ratings(ratings_table, current_rating):
     # Check to see if we are past the update date of this month already
     if current_date_yr_ago > update_date_yr_ago:
         update_date_yr_ago = find_update_date(today.year - 1, today.month + 1)
-
     # Preprocess the list of ratings by converting the date strings into formal dates
+    updated_ratings = pd.DataFrame(columns=ratings_columns)
     for i, row in ratings_table.iterrows():
         row['Date'] = datetime.strptime(row['Date'], '%d-%b-%Y')
         # Determine whether any rounds should be excluded -> outside 2.5 STDEV or 100 points of current rating
@@ -142,25 +142,27 @@ def calculate_ratings(ratings_table, current_rating):
             # Also check the round was in the last 12 months
             if row['Date'] > update_date_yr_ago:
                 row['Included'] = 'Yes'
+                updated_ratings = pd.concat([updated_ratings, pd.DataFrame([row])])
             else:
                 row['Included'] = 'No'
+                updated_ratings = pd.concat([updated_ratings, pd.DataFrame([row])])
         else:
             row['Included'] = 'No'
-
+            updated_ratings = pd.concat([updated_ratings, pd.DataFrame([row])])
     # Work out the total number of rounds and the number of rounds to double count due to recency
-    recent_rounds = int(len(ratings_table) * 0.25)
+    recent_rounds = int(len(updated_ratings[updated_ratings['Included'] == 'Yes']) * 0.25)
 
     # Calculate and return the resultant average as the new rating and the change from current
     counted_rounds = 0
     ratings_sum = 0
-    for i, row in ratings_table.iterrows():
+    for i, row in updated_ratings.iterrows():
         if row['Included'] == 'Yes':
             counted_rounds += 1
             if i < recent_rounds:
                 ratings_sum += int(row['Rating']) * 2
             else:
                 ratings_sum += int(row['Rating'])
-    return ratings_sum // (counted_rounds + recent_rounds)
+    return ratings_sum // (counted_rounds + recent_rounds), updated_ratings
 
 if __name__ == '__main__':
     # Get the PDGA number passed through the command line
@@ -181,6 +183,6 @@ if __name__ == '__main__':
     ratings_table = ratings_table.reset_index(drop=True)
     # Then calculate the new rating based on the up to date list of round ratings
     driver.quit()
-    new_rating = calculate_ratings(ratings_table, current_rating)
+    new_rating, ratings_table = calculate_ratings(ratings_table, current_rating)
     print('Your new rating is estimated to be:', new_rating)
     print(ratings_table)
