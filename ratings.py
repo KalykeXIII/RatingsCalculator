@@ -1,6 +1,7 @@
 import os
 import statistics
 import sys
+import argparse
 import pandas as pd
 from datetime import datetime, timedelta
 from selenium import webdriver
@@ -165,8 +166,12 @@ def calculate_ratings(ratings_table, current_rating):
     return ratings_sum // (counted_rounds + recent_rounds), updated_ratings
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Predict your next PDGA rating update')
+    parser.add_argument('pdga_number', type=str, help='PDGA number')
+    parser.add_argument('--additional', nargs='+', help='Add additional rounds that are not read automatically')
+    args = parser.parse_args()
     # Get the PDGA number passed through the command line
-    pdga_number = sys.argv[1]
+    pdga_number = args.pdga_number
     # # Retrieve a list of all the events this player has competed in (only concerned with the current year as the only reason we want the list is to add new rounds)
     all_events, event_lookup, current_rating = get_all_events(pdga_number)
     # Get a list of the currently evaluated events and the currently considered ratings
@@ -182,6 +187,17 @@ if __name__ == '__main__':
             ratings_table = pd.concat([new_ratings, ratings_table])
     ratings_table = ratings_table.reset_index(drop=True)
     # Then calculate the new rating based on the up to date list of round ratings
+    if args.additional:
+        # Create a new row to add to the DataFrame
+        custom_rounds = pd.DataFrame(columns=ratings_table.columns)
+        # Create a fake row
+        template = {'Tournament': 'Custom', 'Date': datetime.strftime(datetime.today(), '%d-%b-%Y'), 'Rating': '', 'Included': 'Yes'}
+        for round in args.additional:
+            round_row = pd.DataFrame(template, index=[0])
+            round_row['Rating'] = int(round)
+            custom_rounds = pd.concat([round_row, custom_rounds])
+        ratings_table = pd.concat([custom_rounds, ratings_table])
+        ratings_table = ratings_table.reset_index(drop=True)
     driver.quit()
     new_rating, ratings_table = calculate_ratings(ratings_table, current_rating)
     print('Your new rating is estimated to be:', new_rating)
